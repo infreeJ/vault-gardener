@@ -1,0 +1,11 @@
+{
+  "id": "vault-gardener",
+  "name": "Vault Gardener",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Track document view counts and keep your vault clean",
+  "author": "",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

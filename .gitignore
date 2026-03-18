@@ -1,0 +1,29 @@
+# Build output
+main.js
+*.js.map
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Obsidian plugin runtime data (user-specific, not source)
+data.json
+
+# Obsidian dev hot-reload marker
+.hotreload
+
+# Test vault config (if you use a local vault for testing)
+.obsidian/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
