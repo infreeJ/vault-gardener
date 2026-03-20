@@ -1,23 +1,14 @@
-import { ItemView, WorkspaceLeaf, TFile } from "obsidian";
+import { ItemView, WorkspaceLeaf, TFile, Modal, App, Notice } from "obsidian";
 import type VaultGardenerPlugin from "../../main";
-import { ViewRecord } from "../../types";
+import { PreviewModal } from "../preview-modal/preview-modal";
 
 export const VIEW_TYPE_GARDEN = "vault-gardener-view";
 
-interface FileEntry {
-  path: string;
-  name: string;
-  record: ViewRecord;
-}
-
-type SortKey = "count-desc" | "count-asc" | "last-viewed";
-
-type ActiveTab = "tracked" | "unvisited";
+type AgeFilter = 0 | 30 | 90 | 180 | 365;
 
 export class GardenView extends ItemView {
   private plugin: VaultGardenerPlugin;
-  private sortKey: SortKey = "count-desc";
-  private activeTab: ActiveTab = "tracked";
+  private ageFilter: AgeFilter = 30;
 
   constructor(leaf: WorkspaceLeaf, plugin: VaultGardenerPlugin) {
     super(leaf);
@@ -47,153 +38,152 @@ export class GardenView extends ItemView {
     container.empty();
 
     const root = container.createDiv({ cls: "vg-root" });
-
     this.renderHeader(root);
-    this.renderSummary(root);
-
-    if (this.activeTab === "tracked") {
-      this.renderList(root);
-    } else {
-      this.renderUnvisitedList(root);
-    }
+    this.renderList(root);
   }
 
   private renderHeader(root: HTMLElement): void {
     const header = root.createDiv({ cls: "vg-header" });
     header.createEl("h4", { text: "Vault Gardener" });
 
-    const tabs = header.createDiv({ cls: "vg-tabs" });
+    const controls = header.createDiv({ cls: "vg-controls" });
 
-    const tabDefs: { key: ActiveTab; label: string }[] = [
-      { key: "tracked", label: "Tracked" },
-      { key: "unvisited", label: "Never Opened" },
+    const ageSelect = controls.createEl("select", { cls: "vg-sort-select" });
+    const ageOptions: { value: AgeFilter; label: string }[] = [
+      { value: 0, label: "All" },
+      { value: 30, label: "30 days+" },
+      { value: 90, label: "90 days+" },
+      { value: 180, label: "180 days+" },
+      { value: 365, label: "1 year+" },
     ];
-    for (const tab of tabDefs) {
-      const btn = tabs.createEl("button", { cls: "vg-tab-btn", text: tab.label });
-      if (tab.key === this.activeTab) btn.addClass("is-active");
-      btn.addEventListener("click", () => {
-        this.activeTab = tab.key;
-        this.render();
-      });
+    for (const opt of ageOptions) {
+      const el = ageSelect.createEl("option", { value: String(opt.value), text: opt.label });
+      if (opt.value === this.ageFilter) el.selected = true;
     }
-
-    if (this.activeTab === "tracked") {
-      const controls = header.createDiv({ cls: "vg-controls" });
-      const sortSelect = controls.createEl("select", { cls: "vg-sort-select" });
-
-      const options: { value: SortKey; label: string }[] = [
-        { value: "count-desc", label: "Most viewed" },
-        { value: "count-asc", label: "Least viewed" },
-        { value: "last-viewed", label: "Recently viewed" },
-      ];
-      for (const opt of options) {
-        const el = sortSelect.createEl("option", { value: opt.value, text: opt.label });
-        if (opt.value === this.sortKey) el.selected = true;
-      }
-      sortSelect.addEventListener("change", () => {
-        this.sortKey = sortSelect.value as SortKey;
-        this.render();
-      });
-    }
-  }
-
-  private renderSummary(root: HTMLElement): void {
-    const entries = this.getEntries();
-    const unviewed = this.getUnviewedCount();
-
-    const summary = root.createDiv({ cls: "vg-summary" });
-    summary.createSpan({ text: `${entries.length} tracked` });
-    if (unviewed > 0) {
-      summary.createSpan({ text: ` · ${unviewed} never opened`, cls: "vg-unviewed-badge" });
-    }
+    ageSelect.addEventListener("change", () => {
+      this.ageFilter = Number(ageSelect.value) as AgeFilter;
+      this.render();
+    });
   }
 
   private renderList(root: HTMLElement): void {
-    const list = root.createDiv({ cls: "vg-list" });
-    const sorted = this.getSortedEntries(this.getEntries());
+    const orphans = this.getOrphanedFiles();
 
-    if (sorted.length === 0) {
-      list.createDiv({ cls: "vg-empty", text: "No documents tracked yet. Open some files!" });
+    const summary = root.createDiv({ cls: "vg-summary" });
+    summary.createSpan({ text: `${orphans.length} orphaned file${orphans.length !== 1 ? "s" : ""}` });
+
+    const list = root.createDiv({ cls: "vg-list" });
+
+    if (orphans.length === 0) {
+      list.createDiv({ cls: "vg-empty", text: "No orphaned files found." });
       return;
     }
 
-    for (const entry of sorted) {
-      this.renderEntry(list, entry);
+    for (const file of orphans) {
+      this.renderRow(list, file);
     }
   }
 
-  private renderEntry(container: HTMLElement, entry: FileEntry): void {
+  private renderRow(container: HTMLElement, file: TFile): void {
     const row = container.createDiv({ cls: "vg-row" });
 
     const info = row.createDiv({ cls: "vg-row-info" });
-    const name = info.createDiv({ cls: "vg-row-name", text: entry.name });
-    name.title = entry.path;
-    info.createDiv({ cls: "vg-row-path", text: entry.path });
+    const name = info.createDiv({ cls: "vg-row-name", text: file.basename });
+    name.title = file.path;
+    info.createDiv({ cls: "vg-row-path", text: file.path });
+    info.createDiv({
+      cls: "vg-row-mtime",
+      text: `Modified: ${new Date(file.stat.mtime).toLocaleDateString()}`,
+    });
 
-    const meta = row.createDiv({ cls: "vg-row-meta" });
-    meta.createDiv({ cls: "vg-count-badge", text: `${entry.record.count}x` });
-    meta.createDiv({ cls: "vg-last-viewed", text: this.formatDate(entry.record.lastViewed) });
+    const actions = row.createDiv({ cls: "vg-row-actions" });
 
-    row.addEventListener("click", () => {
-      const file = this.app.vault.getAbstractFileByPath(entry.path);
-      if (file instanceof TFile) {
-        this.app.workspace.getLeaf(false).openFile(file);
-      }
+    actions.createEl("button", { cls: "vg-btn", text: "Preview" }).addEventListener("click", (e) => {
+      e.stopPropagation();
+      new PreviewModal(this.app, file).open();
+    });
+
+    actions.createEl("button", { cls: "vg-btn", text: "Archive" }).addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await this.archiveFile(file);
+    });
+
+    actions.createEl("button", { cls: "vg-btn vg-btn-danger", text: "Delete" }).addEventListener("click", (e) => {
+      e.stopPropagation();
+      new ConfirmModal(this.app, `Delete "${file.basename}"?`, async () => {
+        await this.app.vault.delete(file);
+        this.render();
+      }).open();
     });
   }
 
-  private renderUnvisitedList(root: HTMLElement): void {
-    const list = root.createDiv({ cls: "vg-list" });
-    const tracked = new Set(Object.keys(this.plugin.data.records));
-    const unvisited = this.app.vault
+  private getOrphanedFiles(): TFile[] {
+    const cutoff = this.ageFilter > 0 ? Date.now() - this.ageFilter * 24 * 60 * 60 * 1000 : null;
+
+    return this.app.vault
       .getMarkdownFiles()
-      .filter((f) => !tracked.has(f.path))
-      .sort((a, b) => a.path.localeCompare(b.path));
-
-    if (unvisited.length === 0) {
-      list.createDiv({ cls: "vg-empty", text: "All files have been opened at least once." });
-      return;
-    }
-
-    for (const file of unvisited) {
-      const row = list.createDiv({ cls: "vg-row" });
-      const info = row.createDiv({ cls: "vg-row-info" });
-      const name = info.createDiv({
-        cls: "vg-row-name",
-        text: file.basename,
-      });
-      name.title = file.path;
-      info.createDiv({ cls: "vg-row-path", text: file.path });
-
-      row.addEventListener("click", () => {
-        this.app.workspace.getLeaf(false).openFile(file);
-      });
-    }
+      .filter((file) => {
+        if (cutoff !== null && file.stat.mtime > cutoff) return false;
+        return this.getBacklinkCount(file.path) === 0;
+      })
+      .sort((a, b) => a.stat.mtime - b.stat.mtime);
   }
 
-  private getEntries(): FileEntry[] {
-    return Object.entries(this.plugin.data.records).map(([path, record]) => ({
-      path,
-      name: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
-      record,
-    }));
+  private getBacklinkCount(filePath: string): number {
+    const resolvedLinks = this.app.metadataCache.resolvedLinks;
+    let count = 0;
+    for (const links of Object.values(resolvedLinks)) {
+      if (links[filePath]) count++;
+    }
+    return count;
   }
 
-  private getSortedEntries(entries: FileEntry[]): FileEntry[] {
-    return [...entries].sort((a, b) => {
-      if (this.sortKey === "count-desc") return b.record.count - a.record.count;
-      if (this.sortKey === "count-asc") return a.record.count - b.record.count;
-      return b.record.lastViewed - a.record.lastViewed;
+  private async archiveFile(file: TFile): Promise<void> {
+    const archiveFolder = this.plugin.settings.archiveFolder;
+    const folderExists = this.app.vault.getAbstractFileByPath(archiveFolder);
+    if (!folderExists) {
+      await this.app.vault.createFolder(archiveFolder);
+    }
+
+    const dest = `${archiveFolder}/${file.name}`;
+    try {
+      await this.app.vault.rename(file, dest);
+      this.render();
+    } catch {
+      new Notice(`"${file.name}" already exists in "${archiveFolder}". Change the archive folder in settings.`);
+    }
+  }
+}
+
+class ConfirmModal extends Modal {
+  private message: string;
+  private onConfirm: () => Promise<void>;
+
+  constructor(app: App, message: string, onConfirm: () => Promise<void>) {
+    super(app);
+    this.message = message;
+    this.onConfirm = onConfirm;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.createEl("p", { text: this.message });
+
+    const btnRow = contentEl.createDiv({ cls: "vg-confirm-btns" });
+
+    btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+      this.close();
     });
+
+    btnRow
+      .createEl("button", { cls: "vg-btn vg-btn-danger", text: "Delete" })
+      .addEventListener("click", async () => {
+        await this.onConfirm();
+        this.close();
+      });
   }
 
-  private getUnviewedCount(): number {
-    const allFiles = this.app.vault.getMarkdownFiles();
-    const tracked = new Set(Object.keys(this.plugin.data.records));
-    return allFiles.filter((f) => !tracked.has(f.path)).length;
-  }
-
-  private formatDate(ts: number): string {
-    return new Date(ts).toLocaleDateString();
+  onClose(): void {
+    this.contentEl.empty();
   }
 }

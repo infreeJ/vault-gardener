@@ -1,13 +1,7 @@
-export interface ViewRecord {
-  count: number;
-  lastViewed: number; // Unix timestamp
-  firstViewed: number; // Unix timestamp
+export interface PluginSettings {
+  archiveFolder: string;
 }
 
-export interface PluginData {
-  records: Record<string, ViewRecord>; // key: file path
-}
-
-export const DEFAULT_DATA: PluginData = {
-  records: {},
+export const DEFAULT_SETTINGS: PluginSettings = {
+  archiveFolder: "_archive",
 };

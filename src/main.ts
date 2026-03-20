@@ -1,16 +1,13 @@
-import { Plugin, TFile, WorkspaceLeaf } from "obsidian";
-import { DEFAULT_DATA, PluginData } from "./types";
+import { Plugin, WorkspaceLeaf } from "obsidian";
+import { DEFAULT_SETTINGS, PluginSettings } from "./types";
 import { GardenView, VIEW_TYPE_GARDEN } from "./features/garden-view/garden-view";
-import { Tracker } from "./features/tracker/tracker";
+import { GardenSettingTab } from "./features/settings/settings-tab";
 
 export default class VaultGardenerPlugin extends Plugin {
-  data: PluginData = DEFAULT_DATA;
-  private tracker: Tracker;
+  settings: PluginSettings = DEFAULT_SETTINGS;
 
   async onload(): Promise<void> {
-    await this.loadData();
-
-    this.tracker = new Tracker(this);
+    await this.loadSettings();
 
     this.registerView(VIEW_TYPE_GARDEN, (leaf) => new GardenView(leaf, this));
 
@@ -24,21 +21,17 @@ export default class VaultGardenerPlugin extends Plugin {
       callback: () => this.activateView(),
     });
 
-    this.registerEvent(
-      this.app.workspace.on("file-open", (file: TFile | null) => {
-        if (file) this.tracker.record(file);
-      })
-    );
+    this.addSettingTab(new GardenSettingTab(this.app, this));
   }
 
   onunload(): void {}
 
-  async loadData(): Promise<void> {
-    this.data = Object.assign({}, DEFAULT_DATA, await super.loadData());
+  async loadSettings(): Promise<void> {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await super.loadData());
   }
 
-  async saveData(): Promise<void> {
-    await super.saveData(this.data);
+  async saveSettings(): Promise<void> {
+    await super.saveData(this.settings);
   }
 
   private async activateView(): Promise<void> {
