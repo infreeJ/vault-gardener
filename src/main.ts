@@ -1,12 +1,16 @@
 import { Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_DATA, PluginData } from "./types";
-import { GardenView, VIEW_TYPE_GARDEN } from "./view";
+import { GardenView, VIEW_TYPE_GARDEN } from "./features/garden-view/garden-view";
+import { Tracker } from "./features/tracker/tracker";
 
 export default class VaultGardenerPlugin extends Plugin {
   data: PluginData = DEFAULT_DATA;
+  private tracker: Tracker;
 
-  async onload() {
+  async onload(): Promise<void> {
     await this.loadData();
+
+    this.tracker = new Tracker(this);
 
     this.registerView(VIEW_TYPE_GARDEN, (leaf) => new GardenView(leaf, this));
 
@@ -22,52 +26,32 @@ export default class VaultGardenerPlugin extends Plugin {
 
     this.registerEvent(
       this.app.workspace.on("file-open", (file: TFile | null) => {
-        if (file) this.recordView(file);
+        if (file) this.tracker.record(file);
       })
     );
   }
 
-  onunload() {}
+  onunload(): void {}
 
-  recordView(file: TFile) {
-    const now = Date.now();
-    const existing = this.data.records[file.path];
-
-    if (existing) {
-      existing.count += 1;
-      existing.lastViewed = now;
-    } else {
-      this.data.records[file.path] = {
-        count: 1,
-        lastViewed: now,
-        firstViewed: now,
-      };
-    }
-
-    this.saveData();
-  }
-
-  async loadData() {
+  async loadData(): Promise<void> {
     this.data = Object.assign({}, DEFAULT_DATA, await super.loadData());
   }
 
-  async saveData() {
+  async saveData(): Promise<void> {
     await super.saveData(this.data);
   }
 
-  async activateView() {
+  private async activateView(): Promise<void> {
     const { workspace } = this.app;
 
-    let leaf: WorkspaceLeaf | null = null;
     const leaves = workspace.getLeavesOfType(VIEW_TYPE_GARDEN);
-
     if (leaves.length > 0) {
-      leaf = leaves[0];
-    } else {
-      leaf = workspace.getRightLeaf(false);
-      await leaf?.setViewState({ type: VIEW_TYPE_GARDEN, active: true });
+      workspace.revealLeaf(leaves[0]);
+      return;
     }
 
+    const leaf: WorkspaceLeaf | null = workspace.getRightLeaf(false);
+    await leaf?.setViewState({ type: VIEW_TYPE_GARDEN, active: true });
     if (leaf) workspace.revealLeaf(leaf);
   }
 }

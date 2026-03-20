@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile } from "obsidian";
-import type VaultGardenerPlugin from "./main";
-import { ViewRecord } from "./types";
+import type VaultGardenerPlugin from "../../main";
+import { ViewRecord } from "../../types";
 
 export const VIEW_TYPE_GARDEN = "vault-gardener-view";
 
@@ -21,37 +21,42 @@ export class GardenView extends ItemView {
     this.plugin = plugin;
   }
 
-  getViewType() {
+  getViewType(): string {
     return VIEW_TYPE_GARDEN;
   }
 
-  getDisplayText() {
+  getDisplayText(): string {
     return "Vault Gardener";
   }
 
-  getIcon() {
+  getIcon(): string {
     return "sprout";
   }
 
-  async onOpen() {
+  async onOpen(): Promise<void> {
     this.render();
   }
 
-  async onClose() {}
+  async onClose(): Promise<void> {}
 
-  render() {
+  render(): void {
     const container = this.containerEl.children[1];
     container.empty();
 
     const root = container.createDiv({ cls: "vg-root" });
 
-    // Header
+    this.renderHeader(root);
+    this.renderSummary(root);
+    this.renderList(root);
+  }
+
+  private renderHeader(root: HTMLElement): void {
     const header = root.createDiv({ cls: "vg-header" });
     header.createEl("h4", { text: "Vault Gardener" });
 
-    // Sort controls
     const controls = header.createDiv({ cls: "vg-controls" });
     const sortSelect = controls.createEl("select", { cls: "vg-sort-select" });
+
     const options: { value: SortKey; label: string }[] = [
       { value: "count-desc", label: "Most viewed" },
       { value: "count-asc", label: "Least viewed" },
@@ -65,51 +70,44 @@ export class GardenView extends ItemView {
       this.sortKey = sortSelect.value as SortKey;
       this.render();
     });
+  }
 
-    // Stats summary
+  private renderSummary(root: HTMLElement): void {
     const entries = this.getEntries();
-    const total = entries.length;
     const unviewed = this.getUnviewedCount();
 
     const summary = root.createDiv({ cls: "vg-summary" });
-    summary.createSpan({ text: `${total} tracked` });
+    summary.createSpan({ text: `${entries.length} tracked` });
     if (unviewed > 0) {
       summary.createSpan({ text: ` · ${unviewed} never opened`, cls: "vg-unviewed-badge" });
     }
+  }
 
-    // List
+  private renderList(root: HTMLElement): void {
     const list = root.createDiv({ cls: "vg-list" });
-    const sorted = this.getSortedEntries(entries);
+    const sorted = this.getSortedEntries(this.getEntries());
+
+    if (sorted.length === 0) {
+      list.createDiv({ cls: "vg-empty", text: "No documents tracked yet. Open some files!" });
+      return;
+    }
 
     for (const entry of sorted) {
       this.renderEntry(list, entry);
     }
-
-    if (sorted.length === 0) {
-      list.createDiv({ cls: "vg-empty", text: "No documents tracked yet. Open some files!" });
-    }
   }
 
-  private renderEntry(container: HTMLElement, entry: FileEntry) {
+  private renderEntry(container: HTMLElement, entry: FileEntry): void {
     const row = container.createDiv({ cls: "vg-row" });
 
     const info = row.createDiv({ cls: "vg-row-info" });
     const name = info.createDiv({ cls: "vg-row-name", text: entry.name });
     name.title = entry.path;
-    info.createDiv({
-      cls: "vg-row-path",
-      text: entry.path,
-    });
+    info.createDiv({ cls: "vg-row-path", text: entry.path });
 
     const meta = row.createDiv({ cls: "vg-row-meta" });
-    meta.createDiv({
-      cls: "vg-count-badge",
-      text: `${entry.record.count}x`,
-    });
-    meta.createDiv({
-      cls: "vg-last-viewed",
-      text: this.formatDate(entry.record.lastViewed),
-    });
+    meta.createDiv({ cls: "vg-count-badge", text: `${entry.record.count}x` });
+    meta.createDiv({ cls: "vg-last-viewed", text: this.formatDate(entry.record.lastViewed) });
 
     row.addEventListener("click", () => {
       const file = this.app.vault.getAbstractFileByPath(entry.path);
@@ -120,8 +118,7 @@ export class GardenView extends ItemView {
   }
 
   private getEntries(): FileEntry[] {
-    const records = this.plugin.data.records;
-    return Object.entries(records).map(([path, record]) => ({
+    return Object.entries(this.plugin.data.records).map(([path, record]) => ({
       path,
       name: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
       record,
@@ -143,7 +140,6 @@ export class GardenView extends ItemView {
   }
 
   private formatDate(ts: number): string {
-    const d = new Date(ts);
-    return d.toLocaleDateString();
+    return new Date(ts).toLocaleDateString();
   }
 }
