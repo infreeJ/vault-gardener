@@ -12,9 +12,12 @@ interface FileEntry {
 
 type SortKey = "count-desc" | "count-asc" | "last-viewed";
 
+type ActiveTab = "tracked" | "unvisited";
+
 export class GardenView extends ItemView {
   private plugin: VaultGardenerPlugin;
   private sortKey: SortKey = "count-desc";
+  private activeTab: ActiveTab = "tracked";
 
   constructor(leaf: WorkspaceLeaf, plugin: VaultGardenerPlugin) {
     super(leaf);
@@ -47,29 +50,51 @@ export class GardenView extends ItemView {
 
     this.renderHeader(root);
     this.renderSummary(root);
-    this.renderList(root);
+
+    if (this.activeTab === "tracked") {
+      this.renderList(root);
+    } else {
+      this.renderUnvisitedList(root);
+    }
   }
 
   private renderHeader(root: HTMLElement): void {
     const header = root.createDiv({ cls: "vg-header" });
     header.createEl("h4", { text: "Vault Gardener" });
 
-    const controls = header.createDiv({ cls: "vg-controls" });
-    const sortSelect = controls.createEl("select", { cls: "vg-sort-select" });
+    const tabs = header.createDiv({ cls: "vg-tabs" });
 
-    const options: { value: SortKey; label: string }[] = [
-      { value: "count-desc", label: "Most viewed" },
-      { value: "count-asc", label: "Least viewed" },
-      { value: "last-viewed", label: "Recently viewed" },
+    const tabDefs: { key: ActiveTab; label: string }[] = [
+      { key: "tracked", label: "Tracked" },
+      { key: "unvisited", label: "Never Opened" },
     ];
-    for (const opt of options) {
-      const el = sortSelect.createEl("option", { value: opt.value, text: opt.label });
-      if (opt.value === this.sortKey) el.selected = true;
+    for (const tab of tabDefs) {
+      const btn = tabs.createEl("button", { cls: "vg-tab-btn", text: tab.label });
+      if (tab.key === this.activeTab) btn.addClass("is-active");
+      btn.addEventListener("click", () => {
+        this.activeTab = tab.key;
+        this.render();
+      });
     }
-    sortSelect.addEventListener("change", () => {
-      this.sortKey = sortSelect.value as SortKey;
-      this.render();
-    });
+
+    if (this.activeTab === "tracked") {
+      const controls = header.createDiv({ cls: "vg-controls" });
+      const sortSelect = controls.createEl("select", { cls: "vg-sort-select" });
+
+      const options: { value: SortKey; label: string }[] = [
+        { value: "count-desc", label: "Most viewed" },
+        { value: "count-asc", label: "Least viewed" },
+        { value: "last-viewed", label: "Recently viewed" },
+      ];
+      for (const opt of options) {
+        const el = sortSelect.createEl("option", { value: opt.value, text: opt.label });
+        if (opt.value === this.sortKey) el.selected = true;
+      }
+      sortSelect.addEventListener("change", () => {
+        this.sortKey = sortSelect.value as SortKey;
+        this.render();
+      });
+    }
   }
 
   private renderSummary(root: HTMLElement): void {
@@ -115,6 +140,35 @@ export class GardenView extends ItemView {
         this.app.workspace.getLeaf(false).openFile(file);
       }
     });
+  }
+
+  private renderUnvisitedList(root: HTMLElement): void {
+    const list = root.createDiv({ cls: "vg-list" });
+    const tracked = new Set(Object.keys(this.plugin.data.records));
+    const unvisited = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => !tracked.has(f.path))
+      .sort((a, b) => a.path.localeCompare(b.path));
+
+    if (unvisited.length === 0) {
+      list.createDiv({ cls: "vg-empty", text: "All files have been opened at least once." });
+      return;
+    }
+
+    for (const file of unvisited) {
+      const row = list.createDiv({ cls: "vg-row" });
+      const info = row.createDiv({ cls: "vg-row-info" });
+      const name = info.createDiv({
+        cls: "vg-row-name",
+        text: file.basename,
+      });
+      name.title = file.path;
+      info.createDiv({ cls: "vg-row-path", text: file.path });
+
+      row.addEventListener("click", () => {
+        this.app.workspace.getLeaf(false).openFile(file);
+      });
+    }
   }
 
   private getEntries(): FileEntry[] {
